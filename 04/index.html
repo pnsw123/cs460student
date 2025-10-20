@@ -1,0 +1,444 @@
+<html>
+  <head>
+    <meta content="text/html;charset=utf-8" http-equiv="Content-Type">
+    <meta content="utf-8" http-equiv="encoding">
+    <title>Default WebGL!</title>
+    <style>
+      html, body { 
+        background-color:#000;
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        overflow: hidden !important; 
+
+        /* Part 10 + Bonus: Add a customized background!  */
+        background: url("./photos/spongbob.jpg");
+        background-size: cover;
+        background-position: center;
+        background-repeat: no-repeat;
+      }
+
+      #c {
+        width: 100%;
+        height: 100%;
+      }
+    </style>
+  </head>
+  
+  <script id="vertexshader" type="glsl">
+    attribute vec3 a_position;
+
+    uniform vec3 u_offset;
+
+    uniform mat4 u_transform;
+
+    
+    uniform float u_pointsize;
+    void main(void) {
+      vec4 final_position = u_transform * vec4( a_position, 1.);
+      gl_Position = final_position;
+      gl_PointSize = u_pointsize;
+    
+    }
+  </script>
+  
+  <script id="fragmentshader" type="glsl">
+    precision mediump float;
+
+    uniform vec4 u_color;
+
+    void main(void) {
+
+      gl_FragColor = u_color;
+
+    }
+  </script>
+  
+  <script>
+
+    var c, gl;
+    var v_shader, f_shader, shaderprogram;
+    var vertices, indices, v_buffer, i_buffer;
+
+
+    var all_fish;
+
+    // bonus part
+    var jellies = [];   // (unused now)
+    var bubbles = [];   // (unused now)
+    var bigFishPos = [0,0]; // (unused now)
+
+   
+    var fishState = [];             
+    var keys = {};
+    function handleKey(e, isDown)
+    { keys[e.code] = isDown; }
+    window.addEventListener('keydown', function(e){ handleKey(e,true); }); // set true on keydown
+    window.addEventListener('keyup',   function(e){ handleKey(e,false); }); // set false on keyup
+
+    // bonus: WASD control for the big fish only
+    function controlBigFish(offset, dir){
+      var speed = 0.025; 
+      if (keys['KeyA']) { offset[0] -= speed; dir = -1; }
+      if (keys['KeyD']) { offset[0] += speed; dir =  1; }
+      if (keys['KeyW']) { offset[1] += speed; }
+      if (keys['KeyS']) { offset[1] -= speed; }
+      
+      offset[0] = Math.max(-1.25, Math.min(1.25, offset[0])); // GPT added this part for me
+      offset[1] = Math.max(-1.25, Math.min(1.25, offset[1])); // GPT added this part for me
+      return dir;
+    }
+
+    window.onload = function() {
+
+      //************************************************************//
+      //
+      // INITIALIZE WEBGL
+      //
+      c = document.getElementById( 'c' ); // setup canvas
+      c.width = window.innerWidth;
+      c.height = window.innerHeight;
+
+      gl = c.getContext( 'webgl' ); // setup GL context
+      gl.viewport(0, 0, c.width, c.height );
+
+
+      //************************************************************//
+      //
+      // SHADERS
+      //
+      v_shader = gl.createShader( gl.VERTEX_SHADER );
+      f_shader = gl.createShader( gl.FRAGMENT_SHADER );
+      
+      // compile vertex shader
+      gl.shaderSource( v_shader, document.getElementById( 'vertexshader' ).innerText );
+      gl.compileShader( v_shader );
+
+      if (!gl.getShaderParameter( v_shader, gl.COMPILE_STATUS)) {
+        console.log(gl.getShaderInfoLog( v_shader ));
+      }
+
+      // compile fragment shader
+      gl.shaderSource( f_shader, document.getElementById( 'fragmentshader' ).innerText );
+      gl.compileShader( f_shader );
+
+      if (!gl.getShaderParameter( f_shader, gl.COMPILE_STATUS)) {
+        console.log(gl.getShaderInfoLog( f_shader ));
+      }
+
+      // attach and link the shaders
+      shaderprogram = gl.createProgram();
+      gl.attachShader( shaderprogram, v_shader );
+      gl.attachShader( shaderprogram, f_shader );
+
+      gl.linkProgram( shaderprogram );
+
+      gl.useProgram( shaderprogram );
+
+
+      // create multiple rectangles
+      all_fish = [];
+      
+      // part 11: Flip the big one! 
+      all_fish.push( createFish( new Float32Array([0., 0., 0.]), new Float32Array([1.,0.,0.,1.]), 1, -1 ) );
+      // I used a float32array for the offset to be consistent with the random offsets below. ^
+
+      //part 4: add many fish with random colors and offsets
+      for (var i = 0; i < 100; i++) {
+        var random_color  = new Float32Array([Math.random(), Math.random(), Math.random(), Math.random()]);
+        var random_offset = new Float32Array([Math.random()-Math.random(), Math.random()-Math.random(), 0.0]);
+        var random_scale  = Math.random()*0.3;
+        all_fish.push( createFish( random_offset, random_color, random_scale, 1) ); 
+      }
+
+      // bonus part:
+      for (var i = 0; i < 12; i++) {
+        jellies.push({
+            p: [ (Math.random()*2 - 1), (Math.random()*2 - 1) ],  
+            s: 0.002 + Math.random()*0.003,                       
+            r: 6 + Math.random()*10                           
+        });
+      }
+
+     
+      for (var i = 0; i < all_fish.length; i++){ 
+        fishState.push({ // this part is the bonus part, it adds state to each fish for movement
+          vx: (Math.random()*0.004 + 0.003) * (Math.random()<0.5?-1:1), // gentle horizontal drift
+          phase: Math.random()*Math.PI*2,                                // for sinusoidal wiggle
+          wiggleAmp: 0.015 + Math.random()*0.015,                        // vertical amplitude
+          speed: 0.9 + Math.random()*0.6                                 // individual wiggle speed
+        });
+      }
+
+      animate();
+
+    };
+
+
+
+    function createRectangle(offset, color) {
+
+
+      //************************************************************//
+      //
+      // CREATE GEOMETRY
+      //
+      // var vertices = new Float32Array( [
+      //                                -0.5,  0.5, 0.0, // 0: V0
+      //                                -0.5, -0.5, 0.0, // 1: V1, V4
+      //                                 0.5,  0.5, 0.0, // 2: V2, V3
+      //                                 0.5, -0.5, 0.0  // 3: V5
+      //                               ] ); // 2 * 4 == 8 bytes
+
+      // // now use indices
+      // var indices = new Uint8Array( [ 0, 1, 2, 2, 1, 3 ] ); // 6 bytes
+
+        vertices = new Float32Array([
+            -.1,0,0, // 0
+            0,.1,0, // 1
+            0,-.1,0, // 2
+            .2,0,0,  // 3
+            .3,.05,0, // 4
+            .3,-.05,0 // 5
+            ]);
+
+      var indices = new Uint8Array([
+        0,1,2,
+        1,2,3,
+        3,4,5
+      ]);
+
+
+      var v_buffer = gl.createBuffer(); // create
+      gl.bindBuffer( gl.ARRAY_BUFFER, v_buffer ); // bind
+      gl.bufferData( gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW ); // put data in
+      gl.bindBuffer( gl.ARRAY_BUFFER, null ); // unbind
+
+      var i_buffer = gl.createBuffer(); // create
+      gl.bindBuffer( gl.ELEMENT_ARRAY_BUFFER, i_buffer ); // bind
+      gl.bufferData( gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW ); // put data in
+      gl.bindBuffer( gl.ELEMENT_ARRAY_BUFFER, null ); // unbind
+
+      return [v_buffer, i_buffer, offset, color, scale, direction]; // had to add scale, direction to return for part 2.
+    };
+
+    // Part 1–3: createFish with eye buffer
+    function createFish(offset, color, scale=1, direction=1) {
+
+      //************************************************************//
+      //
+      // CREATE GEOMETRY
+      //
+      // Spec-provided fish vertices (7 points) and indices (15) for triangles
+      var vertices = new Float32Array([
+        0.5,  0.0, 0.0,  // 0: nose
+        0.2,  0.25,0.0,  // 1: upper body
+       -0.2,  0.15,0.0,  // 2: upper tail base
+       -0.4,  0.3, 0.0,  // 3: upper tail tip
+       -0.4, -0.3, 0.0,  // 4: lower tail tip
+       -0.2, -0.15,0.0,  // 5: lower tail base
+        0.2, -0.25,0.0   // 6: lower body
+      ]);
+
+      var indices = new Uint8Array([
+        0,1,6,  
+        1,2,6,  
+        2,5,6, 
+        2,3,5,  
+        3,4,5 
+      ]);
+
+      // eye buffer (Part 2)
+      var eye_vertex = (direction == -1)
+        ? new Float32Array([0.2, -0.2, 0.0])
+        : new Float32Array([0.2,  0.2, 0.0]);
+
+      var v_buffer = gl.createBuffer(); // create
+      gl.bindBuffer( gl.ARRAY_BUFFER, v_buffer ); // bind
+      gl.bufferData( gl.ARRAY_BUFFER, vertices, gl.STATIC_DRAW ); // put data in
+      gl.bindBuffer( gl.ARRAY_BUFFER, null ); // unbind
+
+      var i_buffer = gl.createBuffer(); // create
+      gl.bindBuffer( gl.ELEMENT_ARRAY_BUFFER, i_buffer ); // bind
+      gl.bufferData( gl.ELEMENT_ARRAY_BUFFER, indices, gl.STATIC_DRAW ); // put data in
+      gl.bindBuffer( gl.ELEMENT_ARRAY_BUFFER, null ); // unbind
+
+      var eye_v_buffer = gl.createBuffer(); // create
+      gl.bindBuffer( gl.ARRAY_BUFFER, eye_v_buffer ); // bind
+      gl.bufferData( gl.ARRAY_BUFFER, eye_vertex, gl.STATIC_DRAW ); // put data in
+      gl.bindBuffer( gl.ARRAY_BUFFER, null ); // unbind
+
+      // return order required by spec:
+      // [v_buffer, i_buffer, eye_v_buffer, color, offset, scale, direction]
+      return [v_buffer, i_buffer, eye_v_buffer, color, offset, scale, direction];
+    };
+
+    var step_x = .01;
+    var step_y = .01;
+    var direction = -1;
+
+    function animate() {
+
+      requestAnimationFrame(animate);
+
+      gl.clearColor( 0., 0., 0., 0.)
+      gl.clear( gl.COLOR_BUFFER_BIT );
+
+     // Part 9: Add transparency
+      gl.enable(gl.BLEND); 
+      gl.blendEquation(gl.FUNC_ADD);
+      gl.blendFunc(gl.SRC_ALPHA, gl.ONE_MINUS_SRC_ALPHA);
+      gl.disable(gl.DEPTH_TEST);
+
+
+
+        for( var r = 0; r < all_fish.length; r++ ) {
+        
+        //Part 3: correct unpacking order per spec tuple
+
+        // so right now, our current buffer is a list of [v_buffer, i_buffer, eye_v_buffer, color, offset, scale, direction]
+        var current_buffers = all_fish[r];
+        var current_v_buffer = current_buffers[0];
+        var current_i_buffer = current_buffers[1];
+        var current_eye_v_buffer = current_buffers[2];
+        var current_color = current_buffers[3];
+        var current_offset = current_buffers[4];
+        var current_scale = current_buffers[5];
+        var current_direction = current_buffers[6];
+
+
+       
+        /* this was my old code fort part 5, but had to change it for my bonus, (kept, but commented out to preserve):
+        current_offset[0] += 0.01;
+        current_offset[1] += 0.1*Math.random();
+        current_offset[1] -= 0.1*Math.random();
+        if (current_offset[0] >= 1) {
+          current_direction = -1;
+        }
+        current_offset[0] *= current_direction;
+        */
+
+
+ 
+        var st = fishState[r]; // this is to get the state for this fish  ( bonus part )
+        var time = performance.now()*0.001; 
+        
+        if (r === 0){ // part 5: move the fish.
+          current_direction = controlBigFish(current_offset, current_direction);
+        } else {
+          current_offset[0] += st.vx;                             //had to change add this line for a smoother motion (bonus part)
+          current_offset[1] = current_offset[1] + st.wiggleAmp * 0.1 * Math.sin(st.speed*time + st.phase);
+         
+          if (current_offset[0] > 1.15) current_offset[0] = -1.15; //GPT part
+          if (current_offset[0] < -1.15) current_offset[0] = 1.15; //GPT part
+        }
+
+
+
+        //************************************************************//
+        //
+        // CONNECT SHADER WITH GEOMETRY
+        //
+        
+        gl.bindBuffer( gl.ARRAY_BUFFER, current_v_buffer );
+
+        gl.bindBuffer( gl.ELEMENT_ARRAY_BUFFER, current_i_buffer );
+
+        // find the attribute in the shader source
+        var a_position = gl.getAttribLocation( shaderprogram, 'a_position' );
+
+        gl.vertexAttribPointer( a_position, 3, gl.FLOAT, false, 0, 0 );
+
+        gl.enableVertexAttribArray ( a_position );
+
+
+
+        var u_transform = gl.getUniformLocation(shaderprogram, 'u_transform' );
+
+        // part 7 & 8: Rotate and Scale .
+        var theta = Math.random()*10 * Math.PI/180.;
+        var c = Math.cos(theta), s = Math.sin(theta);
+        var transform = [
+          current_direction*current_scale*c,  s, 0, 0,
+         -s,  current_direction*current_scale*c, 0, 0,
+          0,  0,  current_direction*current_scale*1, 0,
+          current_offset[0], current_offset[1], current_offset[2]||0., 1
+        ];
+
+
+        gl.uniformMatrix4fv( u_transform, false, new Float32Array(transform));
+
+
+        var u_color = gl.getUniformLocation( shaderprogram, 'u_color' );
+        
+        // Part 12: Last touches
+        /* this was my old code and I changed it for the bonus:
+        var t = performance.now() * 0.001;
+        var a = 0.6 + 0.4 * Math.sin(t * 2.0);
+        if (r == 0) {
+          current_color = new Float32Array([1.,0.,0.,.7]);
+        } else {
+          current_color = new Float32Array([
+            0.3 + 0.2*Math.sin(t + 0.0),
+            0.6 + 0.2*Math.sin(t + 2.0),
+            0.9 + 0.1*Math.sin(t + 4.0),
+            a
+          ]);
+        }
+        */
+
+       
+        var tt = performance.now()*0.001;
+        var alphaPulse = 0.65 + 0.25*Math.sin(tt*1.8);  // 0.4..0.9
+        if (r === 0) {
+          // big fish: coral-red (distinct from blue wallpaper)
+          current_color = new Float32Array([1.00, 0.90, 0.20, 0.90]);
+                } else {
+
+         
+          var warm = [ // random warm colors with alphaPulse, GPT genreated the exact values for chosen colors of mine:
+            0.98, 0.58, 0.42, alphaPulse,   // coral
+            0.95, 0.76, 0.30, alphaPulse,   // golden
+            0.92, 0.48, 0.60, alphaPulse,   // rose
+            0.70, 0.90, 0.70, alphaPulse    // minty green 
+          ];
+
+          
+          var idx = (r % 4) * 4; // this line is to cycle through the 4 warm colors. r is the fish index which is incremented each loop.
+          current_color = new Float32Array([ warm[idx+0], warm[idx+1], warm[idx+2], warm[idx+3] ]);
+        }
+
+        gl.uniform4fv( u_color, current_color );
+
+        //************************************************************//
+        //
+        // DRAW!
+        //
+
+
+        // Part 1: Change createRectangle to createFish
+        gl.drawElements( gl.TRIANGLES, 15, gl.UNSIGNED_BYTE, 0);
+
+        //Part 3: draw the eye as POINTS with dynamic size
+        var u_pointsize = gl.getUniformLocation( shaderprogram, 'u_pointsize' );
+        gl.uniform1fv( u_pointsize, new Float32Array([current_scale*20.]));
+
+        // eye color:
+        gl.uniform4fv( u_color, new Float32Array([0.,0.,0.,.5]));
+        // part 3: Bind the eye_v_buffer and draw POINTS
+        gl.enableVertexAttribArray ( a_position );
+        gl.bindBuffer( gl.ARRAY_BUFFER, current_eye_v_buffer );
+        gl.vertexAttribPointer(a_position, 3, gl.FLOAT, false, 0, 0);
+        gl.enableVertexAttribArray(a_position);
+        gl.drawArrays( gl.POINTS, 0, 1);
+
+      }
+
+ 
+    };
+
+  </script>
+  <body>
+    <canvas id="c"></canvas>
+  </body>
+</html>
