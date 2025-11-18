@@ -3,27 +3,17 @@
   <head>
     <meta charset="utf-8">
     <title>CS460 A5 - AR</title>
-    <script src="https://aframe.io/releases/1.0.4/aframe.min.js"></script>
-    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
-    <script>
-      // Suppress AR.js material warnings
-      const originalWarn = console.warn;
-      console.warn = function(...args) {
-        if (args[0] && args[0].includes && args[0].includes('markersAreaEnabled')) {
-          return; // Suppress this specific warning
-        }
-        originalWarn.apply(console, args);
-      };
-    </script>
+    <script src="https://aframe.io/releases/1.3.0/aframe.min.js"></script>
+    <script src="https://cs460.org/js/aframe-ar.js"></script>
   </head>
   <body style="margin:0px; overflow:hidden;">
-    <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: true; detectionMode: mono;">
+    <a-scene embedded arjs="sourceType: webcam; debugUIEnabled: false; detectionMode: mono;">
       <a-marker preset="hiro">
         <a-entity
           position="0 0 0"
           rotation="0 0 0"
           scale="2 2 2"
-          gltf-model="url(./tinker.glb)">
+          gltf-model="tinker.glb">
         </a-entity>
       </a-marker>
       <a-entity camera></a-entity>
