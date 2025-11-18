@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>CS460 A5 - Three.js</title>
+
+  <!-- CSS to stretch the <canvas> across the whole window with no margin or padding and a black background -->
+  <style>
+    body { margin:0; padding:0; overflow:hidden; background:black; }
+    canvas { display:block; }
+    .tp-dfwv { z-index:10; }
+  </style>
+
+  <!-- include stats.js widget -->
+  <script src="https://mrdoob.github.io/stats.js/build/stats.min.js"></script>
+
+  <!-- Import map to resolve bare module specifiers -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three/build/three.module.js",
+      "three/": "https://unpkg.com/three/"
+    }
+  }
+  </script>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<script type="module">
+  // setup Three.js imports and addons: OrbitControls, AnaglyphEffect, GLTFLoader, VertexNormalsHelper, Tweakpane
+  import * as THREE from 'https://unpkg.com/three/build/three.module.js';
+  import { OrbitControls } from 'https://unpkg.com/three/examples/jsm/controls/OrbitControls.js';
+  import { GLTFLoader } from 'https://unpkg.com/three/examples/jsm/loaders/GLTFLoader.js';
+  import { AnaglyphEffect } from 'https://unpkg.com/three/examples/jsm/effects/AnaglyphEffect.js';
+  import { VertexNormalsHelper } from 'https://unpkg.com/three/examples/jsm/helpers/VertexNormalsHelper.js';
+  import { Pane } from 'https://cdn.jsdelivr.net/npm/tweakpane@4.0.5/dist/tweakpane.min.js';
+
+  let scene, camera, renderer, controls, loader, effect, stats, pane;
+  let dirLight, ambLight;
+
+  // SETTINGS and HELPER for TWEAKPANE
+  window.SCENE = {
+    anaglyph: false,
+
+    poly: null,
+    rotate_poly: false,
+    do_rotate_poly: function() {
+      window.SCENE.rotate_poly = !window.SCENE.rotate_poly;
+    },
+
+    blender: null,
+    blender_helper: null,
+    rotate_blender: false,
+    do_rotate_blender: function() {
+      window.SCENE.rotate_blender = !window.SCENE.rotate_blender;
+    },
+
+    blender_old_material: null,
+    change_material: function() {
+      if (!window.SCENE.blender) return;
+      if (!window.SCENE.blender_old_material) {
+        window.SCENE.blender_old_material = window.SCENE.blender.material.clone();
+        window.SCENE.blender.material = new THREE.MeshNormalMaterial();
+      } else {
+        window.SCENE.blender.material = window.SCENE.blender_old_material.clone();
+        window.SCENE.blender_old_material = null;
+      }
+    }
+  };
+
+  // use window.onload and animate boilerplate
+  window.onload = function() {
+    init();
+    animate();
+  };
+
+  function init() {
+    const canvas = document.getElementById('c');
+
+    // setup renderer, camera, scene
+    renderer = new THREE.WebGLRenderer({ canvas, antialias:true });
+    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+
+    scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x000000);
+
+    camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 10000);
+    camera.position.set(0, 10, 30);
+
+    // use OrbitControls
+    controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+
+    // use AnaglyphEffect
+    effect = new AnaglyphEffect(renderer);
+    effect.setSize(window.innerWidth, window.innerHeight);
+
+    // configure one directional light and one ambient light
+    dirLight = new THREE.DirectionalLight(0xffffff, 1);
+    dirLight.position.set(20, 40, 20);
+    scene.add(dirLight);
+
+    ambLight = new THREE.AmbientLight(0xffffff, 0.3);
+    scene.add(ambLight);
+
+    // stats.js widget
+    stats = new Stats();
+    document.body.appendChild(stats.domElement);
+
+    // GLTFLoader
+    loader = new GLTFLoader();
+
+    // setup Tweakpane and Scene panel
+    pane = new Pane();
+    const sceneui = pane.addFolder({ title: 'Scene' });// Scene toggles and parameters: Anaglyph, Light X/Y/Z, intensity, AmbientLight color
+    sceneui.addBinding(window.SCENE, 'anaglyph', { label:'Anaglyph' });
+    sceneui.addBinding(dirLight.position, 'x', { min:-100, max:100, label:'Light X' });
+    sceneui.addBinding(dirLight.position, 'y', { min:-100, max:100, label:'Light Y' });
+    sceneui.addBinding(dirLight.position, 'z', { min:-100, max:100, label:'Light Z' });
+    sceneui.addBinding(dirLight, 'intensity', { min:0, max:5, label:'Dir Intensity' });
+
+    const ambientParams = { color: '#ffffff' };
+    sceneui.addBinding(ambientParams, 'color', { label:'AmbientLight Color' })
+      .on('change', ev => ambLight.color.set(ev.value));
+
+    // Pre-create UI panels in the correct order
+    const polyui = pane.addFolder({ title:'PolyCam Mesh' });
+    const blenderui = pane.addFolder({ title:'Blender Mesh' });
+
+    // use GLTFLoader to load the poly.glb file and add it to the scene
+    loader.load('poly.glb', function(gltf) {
+      const root = gltf.scene || gltf.scenes[0];
+      const poly = root.children[0] || root;
+
+      // var poly = gltf.scenes[0].children[0]; and set scale.x/y/z = 10
+      poly.scale.set(10, 10, 10);
+
+      // overwrite quaternion with identity
+      poly.quaternion.w = 1;
+      poly.quaternion.x = 0;
+      poly.quaternion.y = 0;
+      poly.quaternion.z = 0;
+
+      // translateX(5) to avoid overlap
+      poly.translateX(9);
+
+      scene.add(root);
+      window.SCENE.poly = poly;
+
+      // PolyCam Mesh panel: wireframe + rotate! button
+      if (poly.material) {
+        polyui.addBinding(poly.material, 'wireframe', { label:'Wireframe' });
+      }
+      polyui.addButton({ title:'rotate!' }).on('click', () => {
+        window.SCENE.do_rotate_poly();
+      });
+    });
+
+    // copy another GLTFLoader call with callback for edited Mesh from Blender
+    loader.load('edited.glb', function(gltf) {
+      const root = gltf.scene || gltf.scenes[0];
+      let blender = root.children[0] || root;
+
+      // Helper function to find the first Mesh in the hierarchy
+      function findMesh(object) {
+        if (object.isMesh) {
+          return object;
+        }
+        for (let child of object.children) {
+          const mesh = findMesh(child);
+          if (mesh) return mesh;
+        }
+        return null;
+      }
+
+      // Find the actual mesh if blender is a Group/Scene
+      const actualMesh = findMesh(blender);
+      if (actualMesh) {
+        blender = actualMesh;
+      }
+
+      // set scaling for both to factor 10
+      blender.scale.set(10, 10, 10);
+
+      // overwrite quaternion with identity for edited mesh
+      blender.quaternion.w = 1;
+      blender.quaternion.x = 0;
+      blender.quaternion.y = 0;
+      blender.quaternion.z = 0;
+
+      // place meshes next to each other (avoid overlap)
+      blender.translateX(-15);
+
+      scene.add(root);
+      window.SCENE.blender = blender;
+
+      // VertexNormalsHelper for Blender mesh, hidden by default, toggle in UI
+      // VertexNormalsHelper expects a mesh with geometry, so check if blender is a valid mesh first
+      let helper = null;
+      if (blender.geometry) {
+        helper = new VertexNormalsHelper(blender, 0.5);
+        helper.visible = false;
+        scene.add(helper);
+      }
+      window.SCENE.blender_helper = helper;
+
+      // Blender Mesh panel with Show normals!, Change Material!, rotate!
+      if (helper) {
+        blenderui.addBinding(helper, 'visible', { label:'Show normals!' });
+      }
+      blenderui.addButton({ title:'Change Material!' })
+        .on('click', () => window.SCENE.change_material());
+      blenderui.addButton({ title:'rotate!' })
+        .on('click', () => window.SCENE.do_rotate_blender());
+    });
+
+    // handle resize
+    window.addEventListener('resize', onResize);
+  }
+
+  function animate() {
+    requestAnimationFrame(animate);
+
+    controls.update();
+
+    // in animate, if rotate_poly, slerp towards 180 degree quaternion, else slerp back to identity
+    if (window.SCENE.poly) {
+      const qId = new THREE.Quaternion(0,0,0,1);
+      const q180 = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0,1,0), Math.PI
+      );
+      const target = window.SCENE.rotate_poly ? q180 : qId;
+      window.SCENE.poly.quaternion.slerp(target, 0.01);
+    }
+
+    // Blender mesh rotation with same logic and update blender_helper each step
+    if (window.SCENE.blender) {
+      const qId = new THREE.Quaternion(0,0,0,1);
+      const q180 = new THREE.Quaternion().setFromAxisAngle(
+        new THREE.Vector3(0,1,0), Math.PI
+      );
+      const target = window.SCENE.rotate_blender ? q180 : qId;
+      window.SCENE.blender.quaternion.slerp(target, 0.01);
+      if (window.SCENE.blender_helper) {
+        window.SCENE.blender_helper.update();
+      }
+    }// use anaglyph flag to choose renderer or AnaglyphEffect
+    if (window.SCENE.anaglyph) {
+      effect.render(scene, camera);
+    } else {
+      renderer.render(scene, camera);
+    }
+
+    // update stats every frame
+    stats.update();
+  }
+
+  function onResize() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    effect.setSize(window.innerWidth, window.innerHeight);
+  }
+</script>
+</body>
+</html>

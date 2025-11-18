@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>CS460 A5 - WebGPU Babylon</title>
+  <style>
+    html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden; background:black; }
+    #renderCanvas { width:100%; height:100%; display:block; }
+  </style>
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <script src="https://cdn.babylonjs.com/loaders/babylon.glTF2FileLoader.min.js"></script>
+</head>
+<body>
+  <canvas id="renderCanvas"></canvas>
+
+  <script type="module">
+    // CS460 HW5 (Assignment 5) Part 6: WebGPU with Babylon.js
+
+
+    const canvas = document.getElementById('renderCanvas');
+    // below code is taken from part 6 instructions.
+    let engine;
+    try { // I added a try catch block since the orignal code would error out if WebGPU is not supported
+      engine = new BABYLON.WebGPUEngine(canvas, { antialiasing: true });
+      await engine.initAsync();
+      console.log("Using WebGPU engine");
+    } catch (e) {
+      console.warn("WebGPU not supported, falling back to WebGL", e);
+      engine = new BABYLON.Engine(canvas, true);
+    }
+    const scene = new BABYLON.Scene(engine);
+    await BABYLON.SceneLoader.AppendAsync('', 'poly.glb', scene);
+    scene.createDefaultCameraOrLight(true, true, true);
+    scene.activeCamera.attachControl(canvas, true);
+    engine.runRenderLoop(() => scene.render());
+    addEventListener('resize', () => engine.resize());
+  </script>
+</body>
+</html>

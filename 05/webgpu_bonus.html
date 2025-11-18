@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>CS460 A5 - WebGPU Bonus</title>
+  <style>
+    html, body { margin:0; padding:0; width:100%; height:100%; overflow:hidden; background:black; }
+    #renderCanvas { width:100%; height:100%; display:block; }
+    #ui { position:fixed; top:10px; left:10px; z-index:10; display:flex; gap:8px; }
+    #ui button { padding:6px 10px; font-family:system-ui, sans-serif; }
+  </style>
+  <script src="https://cdn.babylonjs.com/babylon.js"></script>
+  <script src="https://cdn.babylonjs.com/loaders/babylon.glTF2FileLoader.min.js"></script>
+</head>
+<body>
+  <div id="ui">
+    <button id="b-ani">ani</button>
+    <button id="b-holo">holo</button>
+    <button id="b-sss">sss</button>
+    <button id="b-glass">glass</button>
+    <button id="b-iri">iri</button>
+  </div>
+  <canvas id="renderCanvas"></canvas>
+
+  <script type="module">
+    // CS460 HW5 SUPER WEBGPU BONUS: set PBR materials on the loaded mesh via mesh.material
+
+    // canvas
+    const canvas = document.getElementById('renderCanvas');
+
+    // WebGPU engine + scene with WebGL fallback
+    let engine;
+    try {
+      engine = new BABYLON.WebGPUEngine(canvas, { antialiasing: true });
+      await engine.initAsync();
+      console.log("Using WebGPU engine");
+    } catch (e) {
+      console.warn("WebGPU not supported, falling back to WebGL", e);
+      engine = new BABYLON.Engine(canvas, true);
+    }
+    const scene = new BABYLON.Scene(engine);
+
+    // load poly.glb into the scene, then grab a mesh to assign materials
+    await BABYLON.SceneLoader.AppendAsync('', 'poly.glb', scene);
+    const mesh = scene.meshes.find(m => m instanceof BABYLON.Mesh && m.name !== "__root__");
+
+    // camera/light
+    scene.createDefaultCameraOrLight(true, true, true);
+    scene.activeCamera.attachControl(canvas, true);
+
+    // PBR materials
+    const matAni = new BABYLON.PBRMaterial("matAni", scene);
+    matAni.metallic = 0.4;
+    matAni.roughness = 0.5;
+    matAni.albedoColor = new BABYLON.Color3(0.15, 0.18, 0.25);
+    matAni.emissiveColor = new BABYLON.Color3(0.1, 0.2, 0.5); // just a hint of glow
+
+    const matHolo = new BABYLON.PBRMaterial("matHolo", scene);
+    matHolo.metallic = 1.0;
+    matHolo.roughness = 0.15;
+    matHolo.albedoColor = new BABYLON.Color3(0.02, 0.02, 0.02);
+    matHolo.clearCoat.isEnabled = true;
+    matHolo.clearCoat.intensity = 1.0;
+    matHolo.clearCoat.roughness = 0.05;
+    matHolo.iridescence.isEnabled = true;
+    matHolo.iridescence.intensity = 0.8;
+    matHolo.iridescence.indexOfRefraction = 1.3;
+    matHolo.iridescence.minimumThickness = 50;
+    matHolo.iridescence.maximumThickness = 400;
+
+    const matSSS = new BABYLON.PBRMaterial("matSSS", scene);
+    matSSS.albedoColor = new BABYLON.Color3(1.0, 0.82, 0.76);
+    matSSS.metallic = 0.0;
+    matSSS.roughness = 0.4;
+    matSSS.subSurface.isTranslucencyEnabled = true;
+    matSSS.subSurface.translucencyIntensity = 0.8;
+
+    const matGlass = new BABYLON.PBRMaterial("matGlass", scene);
+    matGlass.albedoColor = new BABYLON.Color3(0.95, 0.98, 1.0);
+    matGlass.metallic = 0.0;
+    matGlass.roughness = 0.05;
+    matGlass.alpha = 0.2;
+    matGlass.transparencyMode = BABYLON.PBRMaterial.PBRMATERIAL_ALPHABLEND;
+    matGlass.clearCoat.isEnabled = true;
+    matGlass.clearCoat.intensity = 1.0;
+    matGlass.clearCoat.roughness = 0.05;
+
+    const matIri = new BABYLON.PBRMaterial("matIri", scene);
+    matIri.metallic = 0.9;
+    matIri.roughness = 0.2;
+    matIri.albedoColor = new BABYLON.Color3(0.1, 0.1, 0.1);
+    matIri.iridescence.isEnabled = true;
+    matIri.iridescence.intensity = 1.0;
+    matIri.iridescence.indexOfRefraction = 1.5;
+    matIri.iridescence.minimumThickness = 100;
+    matIri.iridescence.maximumThickness = 600;
+
+    // default material
+    if (mesh) mesh.material = matAni;
+
+    // simple buttons to switch materials
+    document.getElementById('b-ani').onclick  = () => { if (mesh) mesh.material = matAni;  };
+    document.getElementById('b-holo').onclick = () => { if (mesh) mesh.material = matHolo; };
+    document.getElementById('b-sss').onclick  = () => { if (mesh) mesh.material = matSSS;  };
+    document.getElementById('b-glass').onclick= () => { if (mesh) mesh.material = matGlass;};
+    document.getElementById('b-iri').onclick  = () => { if (mesh) mesh.material = matIri;  };
+
+    // render loop + resize
+    engine.runRenderLoop(() => scene.render());
+    addEventListener('resize', () => engine.resize());
+  </script>
+</body>
+</html>
